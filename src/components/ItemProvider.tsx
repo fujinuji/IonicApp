@@ -1,6 +1,7 @@
 import {Flight} from "./Flight";
 import PropTypes from 'prop-types';
-import React, {useCallback, useContext, useEffect, useReducer} from "react";
+import React, {useCallback, useEffect, useReducer} from "react";
+import {createItem, getItems, newWebSocket, updateItem} from "./api/flightApi";
 
 type SaveItemFn = (item: Flight) => Promise<any>;
 
@@ -68,15 +69,15 @@ export const ItemProvider: React.FC<ItemProviderProps> = ({children}) => {
     const [state, dispatch] = useReducer(reducer, initialState);
     const {items, fetching, fetchingError, saving, savingError} = state;
     useEffect(getItemsEffect, []);
-    useEffect(wsEffect, []);
+    useEffect(notifyEffect, []);
     const saveItem = useCallback<SaveItemFn>(saveItemCallback, []);
     const value = {items, fetching, fetchingError, saving, savingError, saveItem};
 
     return (
         <ItemContext.Provider value={value}>
-            </ItemContext>
+            {children}
+        </ItemContext.Provider>
     );
-
 
     function getItemsEffect() {
         let canceled = false;
@@ -87,50 +88,44 @@ export const ItemProvider: React.FC<ItemProviderProps> = ({children}) => {
 
         async function fetchItems() {
             try {
-                log('fetchItems started');
-                dispatch({ type: FETCH_ITEMS_STARTED });
+                //TODO Pune logs
+                dispatch({type: FETCH_ITEMS_STARTED});
                 const items = await getItems();
-                log('fetchItems succeeded');
                 if (!canceled) {
-                    dispatch({ type: FETCH_ITEMS_SUCCEEDED, payload: { items } });
+                    dispatch({type: FETCH_ITEMS_SUCCEEDED, payload: {items}})
                 }
-            } catch (error) {
-                log('fetchItems failed');
-                dispatch({ type: FETCH_ITEMS_FAILED, payload: { error } });
+            } catch (e) {
+                dispatch({type: FETCH_ITEMS_FAILED, payload: {e}})
             }
         }
     }
 
-    async function saveItemCallback(item: ItemProps) {
+    async function saveItemCallback(flight: Flight) {
         try {
-            log('saveItem started');
-            dispatch({ type: SAVE_ITEM_STARTED });
-            const savedItem = await (item.id ? updateItem(item) : createItem(item));
-            log('saveItem succeeded');
-            dispatch({ type: SAVE_ITEM_SUCCEEDED, payload: { item: savedItem } });
-        } catch (error) {
-            log('saveItem failed');
-            dispatch({ type: SAVE_ITEM_FAILED, payload: { error } });
+            dispatch({type: SAVE_ITEM_STARTED});
+            const savedItem = await (flight.id ? updateItem(flight) : createItem(flight));
+            dispatch({type: SAVE_ITEM_SUCCEEDED, payload: {item: savedItem}});
+        } catch (e) {
+            dispatch({type: SAVE_ITEM_FAILED, payload: {e}})
         }
     }
-
-    function wsEffect() {
+    
+    function notifyEffect() {
         let canceled = false;
-        log('wsEffect - connecting');
         const closeWebSocket = newWebSocket(message => {
             if (canceled) {
                 return;
             }
-            const { event, payload: { item }} = message;
-            log(`ws message, item ${event}`);
+
+            const {event, payload: {item}} = message;
             if (event === 'created' || event === 'updated') {
-                dispatch({ type: SAVE_ITEM_SUCCEEDED, payload: { item } });
+                dispatch({type: SAVE_ITEM_SUCCEEDED, payload:{item}});
             }
         });
+
         return () => {
-            log('wsEffect - disconnecting');
             canceled = true;
             closeWebSocket();
         }
     }
-})
+};
